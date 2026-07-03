@@ -10,13 +10,40 @@ library(ggplot2)
 
 # Load geographic data
 states <- readRDS("data/states.rds")
+counties <- readRDS("data/counties.rds")
 
 # Convert to sf if not already
 if (!inherits(states, "sf")) {
   states <- st_as_sf(states)
 }
+if (!inherits(counties, "sf")) {
+  counties <- st_as_sf(counties)
+}
 
-# Create sample ancestry data by state (replace with real Census data once API key is set up)
+# Filter counties for Illinois
+illinois_counties <- counties %>%
+  filter(STATEFP == "17")  # FIPS code for Illinois
+
+# Create sample ancestry data for Illinois counties
+illinois_ancestry_data <- illinois_counties %>%
+  st_drop_geometry() %>%
+  mutate(
+    german = runif(n(), 8, 20),
+    irish = runif(n(), 4, 16),
+    english = runif(n(), 6, 18),
+    italian = runif(n(), 2, 10),
+    polish = runif(n(), 1, 12),
+    french = runif(n(), 1, 5),
+    mexican = runif(n(), 1, 30),
+    chinese = runif(n(), 0.2, 3),
+    african_american = runif(n(), 5, 40),
+    asian = runif(n(), 1, 8)
+  ) %>%
+  select(GEOID, german, irish, english, italian, polish, french, mexican, chinese, african_american, asian)
+
+# Join Illinois county data with geography
+illinois_data <- illinois_counties %>%
+  left_join(illinois_ancestry_data, by = "GEOID")
 set.seed(42)
 ancestry_data <- states %>%
   st_drop_geometry() %>%
@@ -160,7 +187,34 @@ ui <- fluidPage(
       ),
       plotOutput("ancestriesGridPlot", height = 800)
     ),
-    # Tab 3: Rankings
+    # Tab 3: Illinois County Map
+    tabPanel("Illinois Map",
+      fluidRow(
+        column(6,
+          selectInput("ancestryIL", 
+            label = "Select Ancestry Group:",
+            choices = c(
+              "German" = "german",
+              "Irish" = "irish",
+              "English" = "english",
+              "Italian" = "italian",
+              "Polish" = "polish",
+              "French" = "french",
+              "Mexican" = "mexican",
+              "Chinese" = "chinese",
+              "African American" = "african_american",
+              "Asian" = "asian"
+            ),
+            selected = "german"
+          )
+        ),
+        column(6,
+          p("Illinois ancestry distribution by county. Darker colors indicate higher percentages.")
+        )
+      ),
+      leafletOutput("illinoisMap")
+    ),
+    # Tab 4: Rankings
     tabPanel("Rankings by State",
       fluidRow(
         column(12,
@@ -254,6 +308,61 @@ server <- function(input, output, session) {
         values = ~value,
         opacity = 0.7,
         title = paste(tools::toTitleCase(gsub("_", " ", input$ancestry)), "%"),
+        position = "bottomright"
+      )
+  })
+  
+  # Illinois map rendering
+  output$illinoisMap <- renderLeaflet({
+    # Get selected ancestry for Illinois
+    il_data <- illinois_data %>%
+      mutate(value = get(input$ancestryIL))
+    
+    # Create color palette for Illinois
+    pal_il <- colorNumeric(
+      palette = "YlGnBu",
+      domain = c(0, max(il_data$value, na.rm = TRUE)),
+      na.color = "#cccccc"
+    )
+    
+    # Create labels
+    labels_il <- sprintf(
+      "<strong>%s County, IL</strong><br/>%s: %.1f%%",
+      il_data$NAME,
+      gsub("_", " ", tools::toTitleCase(input$ancestryIL)),
+      il_data$value
+    ) %>%
+      lapply(HTML)
+    
+    leaflet(data = il_data) %>%
+      addProviderTiles("CartoDB.Positron") %>%
+      setView(lng = -89, lat = 40, zoom = 7) %>%
+      addPolygons(
+        fillColor = ~pal_il(value),
+        weight = 1,
+        opacity = 0.7,
+        color = "white",
+        dashArray = "3",
+        fillOpacity = 0.8,
+        highlight = highlightOptions(
+          weight = 2,
+          color = "#666",
+          dashArray = "",
+          fillOpacity = 0.9,
+          bringToFront = TRUE
+        ),
+        label = labels_il,
+        labelOptions = labelOptions(
+          style = list("font-weight" = "normal", padding = "3px 8px"),
+          textsize = "15px",
+          direction = "auto"
+        )
+      ) %>%
+      addLegend(
+        pal = pal_il,
+        values = ~value,
+        opacity = 0.7,
+        title = paste(tools::toTitleCase(gsub("_", " ", input$ancestryIL)), "%"),
         position = "bottomright"
       )
   })
