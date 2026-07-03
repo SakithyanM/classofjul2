@@ -249,6 +249,16 @@ ui <- fluidPage(
 # Define server
 server <- function(input, output, session) {
   
+  # Create a reactive timer for flashing effect (every 200ms)
+  flash_timer <- reactiveTimer(200)
+  
+  # Reactive expression for flash color - cycles through rainbow colors
+  flash_color <- reactive({
+    flash_timer()
+    colors <- c("#FF0000", "#FF7F00", "#FFFF00", "#00FF00", "#0000FF", "#4B0082", "#9400D3")
+    colors[((as.numeric(Sys.time()) * 5) %% length(colors)) + 1]
+  })
+  
   # Reactive expression for selected ancestry data
   selected_ancestry <- reactive({
     states_data %>%
@@ -312,7 +322,7 @@ server <- function(input, output, session) {
       )
   })
   
-  # Illinois map rendering
+  # Illinois map rendering - initial render
   output$illinoisMap <- renderLeaflet({
     # Get selected ancestry for Illinois
     il_data <- illinois_data %>%
@@ -335,20 +345,21 @@ server <- function(input, output, session) {
       il_data$NAME,
       gsub("_", " ", tools::toTitleCase(input$ancestryIL)),
       il_data$value,
-      ifelse(il_data$is_dupage, "<br/><span style='color: red;'><b>★ DuPage County ★</b></span>", "")
+      ifelse(il_data$is_dupage, "<br/><span style='color: rainbow;'><b>✨ DuPage County ✨</b></span>", "")
     ) %>%
       lapply(HTML)
     
-    leaflet(data = il_data) %>%
+    leaflet(data = il_data, elementId = "illinoisMapElement") %>%
       addProviderTiles("CartoDB.Positron") %>%
       setView(lng = -89, lat = 40, zoom = 7) %>%
       addPolygons(
         fillColor = ~pal_il(value),
-        weight = ifelse(il_data$is_dupage, 3, 1),
-        opacity = ifelse(il_data$is_dupage, 1, 0.7),
-        color = ifelse(il_data$is_dupage, "red", "white"),
-        dashArray = ifelse(il_data$is_dupage, "5,5", "3"),
-        fillOpacity = ifelse(il_data$is_dupage, 0.9, 0.8),
+        weight = 1,
+        opacity = 0.7,
+        color = "white",
+        dashArray = "3",
+        fillOpacity = 0.8,
+        layerId = ~GEOID,
         highlight = highlightOptions(
           weight = 2,
           color = "#666",
@@ -369,11 +380,28 @@ server <- function(input, output, session) {
         opacity = 0.7,
         title = paste(tools::toTitleCase(gsub("_", " ", input$ancestryIL)), "%"),
         position = "bottomright"
-      ) %>%
-      addPopups(
-        lng = -88.1, lat = 41.8,
-        popup = "<b style='color: red;'>★ DuPage County ★</b>",
-        options = popupOptions(closeButton = FALSE)
+      )
+  })
+  
+  # Update DuPage County with flashing colors
+  observe({
+    flash_timer()
+    
+    current_flash <- flash_color()
+    
+    # Get DuPage GEOID
+    dupage_geoid <- illinois_data %>%
+      filter(NAME == "DuPage") %>%
+      pull(GEOID) %>%
+      first()
+    
+    leafletProxy("illinoisMapElement") %>%
+      setShapeStyle(
+        layerId = dupage_geoid,
+        fillColor = current_flash,
+        color = current_flash,
+        weight = 4,
+        opacity = 1
       )
   })
   
