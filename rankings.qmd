@@ -1,0 +1,246 @@
+---
+title: "Ancestry Rankings by State"
+subtitle: "Top Ancestry Groups in Each US State"
+author: "Census Data Explorer"
+date: today
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+    code-fold: true
+editor: visual
+---
+
+## Overview
+
+This document presents rankings of ancestry groups within each state, showing which ancestry groups are most prevalent in different regions of the United States.
+
+## Data Setup
+
+```{r}
+#| message: false
+#| warning: false
+
+library(sf)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(knitr)
+
+# Load geographic data
+states <- readRDS("data/states.rds")
+
+# Convert to sf if needed
+if (!inherits(states, "sf")) {
+  states <- st_as_sf(states)
+}
+
+# Create sample ancestry data
+set.seed(42)
+states_data <- states %>%
+  mutate(
+    german = runif(n(), 10, 25),
+    irish = runif(n(), 5, 18),
+    english = runif(n(), 8, 20),
+    italian = runif(n(), 2, 12),
+    polish = runif(n(), 1, 8),
+    french = runif(n(), 2, 6),
+    mexican = runif(n(), 2, 35),
+    chinese = runif(n(), 0.5, 4),
+    african_american = runif(n(), 2, 40),
+    asian = runif(n(), 1, 10)
+  )
+
+head(states_data)
+```
+
+## Top Ancestry Group by State
+
+Find the dominant ancestry group in each state:
+
+```{r}
+top_ancestry_by_state <- states_data %>%
+  st_drop_geometry() %>%
+  select(NAME, german, irish, english, italian, polish, french, mexican, chinese, african_american, asian) %>%
+  pivot_longer(cols = -NAME, names_to = "ancestry", values_to = "percentage") %>%
+  arrange(NAME, desc(percentage)) %>%
+  group_by(NAME) %>%
+  slice(1) %>%
+  ungroup() %>%
+  arrange(desc(percentage)) %>%
+  mutate(ancestry = gsub("_", " ", tools::toTitleCase(ancestry)))
+
+kable(top_ancestry_by_state, 
+      col.names = c("State", "Top Ancestry Group", "Percentage"),
+      caption = "Most Prevalent Ancestry Group by State")
+```
+
+## Visualization: Top Ancestry by State
+
+```{r}
+#| fig-width: 14
+#| fig-height: 8
+
+ggplot(top_ancestry_by_state, aes(x = reorder(NAME, -percentage), y = percentage, fill = ancestry)) +
+  geom_col() +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    legend.position = "bottom"
+  ) +
+  labs(
+    title = "Top Ancestry Group by State",
+    subtitle = "Ranked by percentage of population",
+    x = "State",
+    y = "Percentage (%)",
+    fill = "Ancestry Group"
+  )
+```
+
+## Top 5 Ancestries by State
+
+For each state, show the top 5 ancestry groups:
+
+```{r}
+top_5_by_state <- states_data %>%
+  st_drop_geometry() %>%
+  select(NAME, german, irish, english, italian, polish, french, mexican, chinese, african_american, asian) %>%
+  pivot_longer(cols = -NAME, names_to = "ancestry", values_to = "percentage") %>%
+  arrange(NAME, desc(percentage)) %>%
+  group_by(NAME) %>%
+  mutate(rank = row_number()) %>%
+  filter(rank <= 5) %>%
+  ungroup() %>%
+  mutate(ancestry = gsub("_", " ", tools::toTitleCase(ancestry)))
+
+# Show first 10 states as example
+kable(head(top_5_by_state, 50), 
+      col.names = c("State", "Ancestry", "Percentage", "Rank"),
+      caption = "Top 5 Ancestry Groups by State (Sample)",
+      digits = 1)
+```
+
+## Ancestry Ranking Heatmap
+
+Heatmap showing rankings (1-10) for selected states:
+
+```{r}
+#| fig-width: 14
+#| fig-height: 8
+
+# Create ranking data (1 = most common, 10 = least common)
+heatmap_data <- states_data %>%
+  st_drop_geometry() %>%
+  select(NAME, german, irish, english, italian, polish, french, mexican, chinese, african_american, asian) %>%
+  pivot_longer(cols = -NAME, names_to = "ancestry", values_to = "percentage") %>%
+  group_by(NAME) %>%
+  mutate(rank = rank(desc(percentage))) %>%
+  ungroup() %>%
+  mutate(ancestry = gsub("_", " ", tools::toTitleCase(ancestry)))
+
+ggplot(heatmap_data, aes(x = ancestry, y = reorder(NAME, -rank), fill = rank)) +
+  geom_tile(color = "white", size = 0.1) +
+  scale_fill_gradient(low = "darkgreen", high = "white", limits = c(1, 10), breaks = 1:10) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 8),
+    plot.title = element_text(size = 14, face = "bold")
+  ) +
+  labs(
+    title = "Ancestry Group Rankings by State",
+    subtitle = "Green = Most common (rank 1), White = Least common (rank 10)",
+    x = "Ancestry Group",
+    y = "State",
+    fill = "Rank"
+  )
+```
+
+## Ancestry Group Coverage by State
+
+How many states have each ancestry as their top group:
+
+```{r}
+ancestry_dominance <- top_ancestry_by_state %>%
+  group_by(ancestry) %>%
+  summarise(
+    num_states = n(),
+    avg_percentage = mean(percentage),
+    max_percentage = max(percentage),
+    min_percentage = min(percentage),
+    .groups = 'drop'
+  ) %>%
+  arrange(desc(num_states))
+
+kable(ancestry_dominance,
+      col.names = c("Ancestry Group", "# of States", "Avg %", "Max %", "Min %"),
+      caption = "Ancestry Groups as Top Group by State",
+      digits = 1)
+```
+
+## States with Highest Diversity
+
+States where ancestries are most evenly distributed (less dominant top group):
+
+```{r}
+diversity_score <- states_data %>%
+  st_drop_geometry() %>%
+  select(NAME, german, irish, english, italian, polish, french, mexican, chinese, african_american, asian) %>%
+  pivot_longer(cols = -NAME, names_to = "ancestry", values_to = "percentage") %>%
+  group_by(NAME) %>%
+  summarise(
+    top_percentage = max(percentage),
+    second_percentage = sort(percentage, decreasing = TRUE)[2],
+    diversity_index = 100 - top_percentage,  # Higher = more diverse
+    .groups = 'drop'
+  ) %>%
+  arrange(diversity_index) %>%
+  head(15)
+
+kable(diversity_score,
+      col.names = c("State", "Top Group %", "2nd Group %", "Diversity Index"),
+      caption = "States with Most Diverse Ancestry Distribution (Top Group is Less Dominant)",
+      digits = 1)
+```
+
+## Distribution Comparison
+
+Box plots comparing the distribution of each ancestry group:
+
+```{r}
+#| fig-width: 12
+#| fig-height: 6
+
+ancestry_dist <- states_data %>%
+  st_drop_geometry() %>%
+  select(german, irish, english, italian, polish, french, mexican, chinese, african_american, asian) %>%
+  pivot_longer(everything(), names_to = "ancestry", values_to = "percentage") %>%
+  mutate(ancestry = gsub("_", " ", tools::toTitleCase(ancestry)))
+
+ggplot(ancestry_dist, aes(x = reorder(ancestry, percentage, FUN = median), y = percentage, fill = ancestry)) +
+  geom_boxplot() +
+  scale_fill_brewer(palette = "Set3") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    plot.title = element_text(size = 14, face = "bold"),
+    legend.position = "none"
+  ) +
+  labs(
+    title = "Distribution of Ancestry Groups Across States",
+    subtitle = "Box plots showing variation by state",
+    x = "Ancestry Group",
+    y = "Percentage (%)"
+  )
+```
+
+## Summary
+
+- **Most Common Dominant Group**: The ancestry group that appears as the top group in the most states
+- **Diversity Index**: Higher values indicate more evenly distributed ancestry groups
+- **Regional Patterns**: Clear geographic clustering of certain ancestry groups

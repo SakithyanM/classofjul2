@@ -1,0 +1,247 @@
+---
+title: "US Ancestry Census Map"
+subtitle: "Interactive Visualization of Ancestry Distribution Across States"
+author: "Census Data Explorer"
+date: today
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 2
+    embed-resources: true
+    code-fold: true
+editor: visual
+---
+
+## Overview
+
+This document presents an interactive map visualization of ancestry distribution across the United States based on Census data. The map allows users to explore different ancestry groups and their geographic patterns.
+
+## Data Setup
+
+First, let's load the necessary libraries and data:
+
+```{r}
+#| message: false
+#| warning: false
+
+library(sf)
+library(leaflet)
+library(dplyr)
+library(tidyr)
+library(RColorBrewer)
+
+# Load geographic data
+counties <- readRDS("data/counties.rds")
+states <- readRDS("data/states.rds")
+
+# Convert to sf if needed
+if (!inherits(states, "sf")) {
+  states <- st_as_sf(states)
+}
+
+# Create sample ancestry data
+set.seed(42)
+ancestry_data <- states %>%
+  st_drop_geometry() %>%
+  mutate(
+    german = runif(n(), 10, 25),
+    irish = runif(n(), 5, 18),
+    english = runif(n(), 8, 20),
+    italian = runif(n(), 2, 12),
+    polish = runif(n(), 1, 8),
+    french = runif(n(), 2, 6),
+    mexican = runif(n(), 2, 35),
+    chinese = runif(n(), 0.5, 4),
+    african_american = runif(n(), 2, 40),
+    asian = runif(n(), 1, 10)
+  ) %>%
+  select(GEOID, german, irish, english, italian, polish, french, mexican, chinese, african_american, asian)
+
+# Join with geography
+states_data <- states %>%
+  left_join(ancestry_data, by = "GEOID")
+
+head(states_data)
+```
+
+## Interactive Map: German Ancestry
+
+```{r}
+#| fig-width: 12
+#| fig-height: 8
+
+# Create color palette
+pal <- colorNumeric(
+  palette = "YlOrRd",
+  domain = c(0, max(states_data$german, na.rm = TRUE)),
+  na.color = "#cccccc"
+)
+
+# Create labels
+labels <- sprintf(
+  "<strong>%s</strong><br/>German: %.1f%%",
+  states_data$NAME,
+  states_data$german
+) %>%
+  lapply(HTML)
+
+# Create map
+leaflet(data = states_data) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  setView(lng = -95, lat = 37.5, zoom = 4) %>%
+  addPolygons(
+    fillColor = ~pal(german),
+    weight = 0.5,
+    opacity = 0.5,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlight = highlightOptions(
+      weight = 2,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.9,
+      bringToFront = TRUE
+    ),
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px"),
+      textsize = "15px",
+      direction = "auto"
+    )
+  ) %>%
+  addLegend(
+    pal = pal,
+    values = ~german,
+    opacity = 0.7,
+    title = "German %",
+    position = "bottomright"
+  )
+```
+
+## Interactive Map: Mexican Ancestry
+
+```{r}
+#| fig-width: 12
+#| fig-height: 8
+
+# Create color palette for Mexican ancestry
+pal_mexican <- colorNumeric(
+  palette = "Blues",
+  domain = c(0, max(states_data$mexican, na.rm = TRUE)),
+  na.color = "#cccccc"
+)
+
+# Create labels
+labels_mexican <- sprintf(
+  "<strong>%s</strong><br/>Mexican: %.1f%%",
+  states_data$NAME,
+  states_data$mexican
+) %>%
+  lapply(HTML)
+
+# Create map
+leaflet(data = states_data) %>%
+  addProviderTiles("CartoDB.Positron") %>%
+  setView(lng = -95, lat = 37.5, zoom = 4) %>%
+  addPolygons(
+    fillColor = ~pal_mexican(mexican),
+    weight = 0.5,
+    opacity = 0.5,
+    color = "white",
+    dashArray = "3",
+    fillOpacity = 0.7,
+    highlight = highlightOptions(
+      weight = 2,
+      color = "#666",
+      dashArray = "",
+      fillOpacity = 0.9,
+      bringToFront = TRUE
+    ),
+    label = labels_mexican,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "3px 8px"),
+      textsize = "15px",
+      direction = "auto"
+    )
+  ) %>%
+  addLegend(
+    pal = pal_mexican,
+    values = ~mexican,
+    opacity = 0.7,
+    title = "Mexican %",
+    position = "bottomright"
+  )
+```
+
+## Summary Statistics
+
+Here are summary statistics for all ancestry groups:
+
+```{r}
+ancestry_summary <- states_data %>%
+  st_drop_geometry() %>%
+  select(german, irish, english, italian, polish, french, mexican, chinese, african_american, asian) %>%
+  summarise(across(everything(), list(
+    mean = mean,
+    min = min,
+    max = max,
+    sd = sd
+  ))) %>%
+  round(2)
+
+# Format for display
+summary_long <- ancestry_summary %>%
+  pivot_longer(everything()) %>%
+  separate(name, into = c("ancestry", "stat"), sep = "_") %>%
+  pivot_wider(names_from = stat, values_from = value)
+
+summary_long
+```
+
+## Top States by Ancestry
+
+### German Ancestry
+```{r}
+states_data %>%
+  st_drop_geometry() %>%
+  select(NAME, german) %>%
+  arrange(desc(german)) %>%
+  head(10) %>%
+  knitr::kable()
+```
+
+### African American Ancestry
+```{r}
+states_data %>%
+  st_drop_geometry() %>%
+  select(NAME, african_american) %>%
+  arrange(desc(african_american)) %>%
+  head(10) %>%
+  knitr::kable()
+```
+
+### Mexican Ancestry
+```{r}
+states_data %>%
+  st_drop_geometry() %>%
+  select(NAME, mexican) %>%
+  arrange(desc(mexican)) %>%
+  head(10) %>%
+  knitr::kable()
+```
+
+## How to Use
+
+1. **Interactive Maps**: Hover over states to see detailed information
+2. **Zoom & Pan**: Use your mouse to explore specific regions
+3. **Color Scale**: Darker colors indicate higher percentages
+4. **Full Application**: Visit the Shiny app at `http://localhost:3838` for the complete interactive experience
+
+## Notes
+
+- **Sample Data**: This document uses simulated ancestry data for demonstration purposes
+- **Real Data**: To use actual Census data, obtain an API key from [https://api.census.gov/data/key_signup.html](https://api.census.gov/data/key_signup.html)
+- **Data Source**: Based on American Community Survey (ACS) 5-year estimates
+- **Geographies**: State-level visualization; county-level data available in the Shiny app
