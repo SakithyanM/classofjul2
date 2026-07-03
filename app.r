@@ -318,6 +318,10 @@ server <- function(input, output, session) {
     il_data <- illinois_data %>%
       mutate(value = get(input$ancestryIL))
     
+    # Identify DuPage County
+    il_data <- il_data %>%
+      mutate(is_dupage = NAME == "DuPage")
+    
     # Create color palette for Illinois
     pal_il <- colorNumeric(
       palette = "YlGnBu",
@@ -327,10 +331,11 @@ server <- function(input, output, session) {
     
     # Create labels
     labels_il <- sprintf(
-      "<strong>%s County, IL</strong><br/>%s: %.1f%%",
+      "<strong>%s County, IL</strong><br/>%s: %.1f%%%s",
       il_data$NAME,
       gsub("_", " ", tools::toTitleCase(input$ancestryIL)),
-      il_data$value
+      il_data$value,
+      ifelse(il_data$is_dupage, "<br/><span style='color: red;'><b>★ DuPage County ★</b></span>", "")
     ) %>%
       lapply(HTML)
     
@@ -339,11 +344,11 @@ server <- function(input, output, session) {
       setView(lng = -89, lat = 40, zoom = 7) %>%
       addPolygons(
         fillColor = ~pal_il(value),
-        weight = 1,
-        opacity = 0.7,
-        color = "white",
-        dashArray = "3",
-        fillOpacity = 0.8,
+        weight = ifelse(il_data$is_dupage, 3, 1),
+        opacity = ifelse(il_data$is_dupage, 1, 0.7),
+        color = ifelse(il_data$is_dupage, "red", "white"),
+        dashArray = ifelse(il_data$is_dupage, "5,5", "3"),
+        fillOpacity = ifelse(il_data$is_dupage, 0.9, 0.8),
         highlight = highlightOptions(
           weight = 2,
           color = "#666",
@@ -364,6 +369,11 @@ server <- function(input, output, session) {
         opacity = 0.7,
         title = paste(tools::toTitleCase(gsub("_", " ", input$ancestryIL)), "%"),
         position = "bottomright"
+      ) %>%
+      addPopups(
+        lng = -88.1, lat = 41.8,
+        popup = "<b style='color: red;'>★ DuPage County ★</b>",
+        options = popupOptions(closeButton = FALSE)
       )
   })
   
